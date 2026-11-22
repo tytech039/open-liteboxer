@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Liteboxer Controller</title>
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#14181d; --panel2:#1b2027; --line:#262d36;
+    --ink:#e8edf2; --dim:#8b97a6; --accent:#5ef08a; --accent2:#ffa23a;
+    --red:#ff5d5d; --radius:14px;
+    font-synthesis-weight:none;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.45 ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,sans-serif}
+  body{padding:14px 14px calc(14px + env(safe-area-inset-bottom));max-width:620px;margin:0 auto}
+  h1{font-size:17px;margin:0;letter-spacing:.2px}
+  h1 span{color:var(--dim);font-weight:400}
+  header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--red);flex:none;
+    box-shadow:0 0 0 3px rgba(255,93,93,.15)}
+  .dot.on{background:var(--accent);box-shadow:0 0 0 3px rgba(94,240,138,.18)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:12px;margin-bottom:12px}
+  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);
+    margin:0 0 10px}
+  button{font:inherit;font-weight:600;color:var(--ink);background:var(--panel2);
+    border:1px solid var(--line);border-radius:10px;padding:11px 14px;cursor:pointer;
+    min-height:44px}
+  button:active{transform:translateY(1px)}
+  button:disabled{opacity:.4;cursor:default}
+  button.primary{background:var(--accent);color:#06240f;border-color:transparent}
+  button.warn{background:var(--accent2);color:#2a1600;border-color:transparent}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .row>*{flex:1 1 auto}
+  label{display:block;font-size:12px;color:var(--dim);margin-bottom:5px}
+  input[type=number],input[type=file],select{width:100%;font:inherit;color:var(--ink);
+    background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+
+  /* target pad layout mirrors the physical machine */
+  .pads{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}
+  .pad{aspect-ratio:1;border-radius:12px;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:2px;font-size:12px;font-weight:700;
+    background:var(--panel2);border:1px solid var(--line);transition:background .08s,border-color .08s}
+  .pad small{font-weight:500;color:var(--dim);font-size:10px}
+  .pad.lit{background:var(--accent);color:#06240f;border-color:transparent}
+  .pad.lit small{color:#06240f;opacity:.75}
+  .pad.hit{background:var(--accent2);color:#2a1600;border-color:transparent}
+  .pad.hit small{color:#2a1600;opacity:.8}
+  .pad.ghost{visibility:hidden}
+
+  #log{font:11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:#070909;
+    border:1px solid var(--line);border-radius:10px;padding:9px;height:190px;
+    overflow:auto;white-space:pre-wrap;word-break:break-all;color:#9fb0c0}
+  #log .tx{color:#6f8aa8} #log .rx{color:#5ef08a} #log .err{color:#ff7b7b}
+  #log .hit{color:#ffa23a;font-weight:700}
+  .stats{display:flex;gap:14px;font-size:13px;color:var(--dim);margin-top:8px;flex-wrap:wrap}
+  .stats b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .note{font-size:12px;color:var(--dim);margin-top:8px}
+  .danger{border-color:#4a2626;background:#1a1012}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="dot" id="dot"></div>
+  <h1>Liteboxer <span id="status">not connected</span></h1>
+</header>
+
+<div class="card">
+  <div class="row">
+    <button class="primary" id="btnConnect">Connect</button>
+    <button id="btnDisconnect" disabled>Disconnect</button>
+  </div>
+  <div class="note" id="support"></div>
+</div>
+
+<div class="card">
+  <h2>Session</h2>
+  <div class="fields">
+    <div>
+      <label for="laneTime">Lane time (ms)</label>
+      <input type="number" id="laneTime" value="1000" min="100" max="65535" step="50">
+    </div>
+    <div>
+      <label for="allGreen">Enter play mode as</label>
+      <select id="allGreen">
+        <option value="1" selected>All green (all 6 lit)</option>
+        <option value="0">Not all green</option>
+      </select>
+    </div>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <button class="primary" id="btnPlay" disabled>Enter play mode</button>
+    <button class="warn" id="btnIdle" disabled>Back to idle</button>
+  </div>
+  <div class="note">Play mode with “all green” lights all six targets and makes
+    them hit-responsive — the quickest check that everything works.</div>
+</div>
+
+<div class="card">
+  <h2>Targets</h2>
+  <div class="pads" id="pads"></div>
+  <div class="note">Tap a target to light it now. Lit = sent, orange = hit.</div>
+  <div class="stats">
+    <span>hits <b id="nHits">0</b></span>
+    <span>last force <b id="lastForce">–</b></span>
+    <span>notes sent <b id="nSent">0</b></span>
+    <span>machine wants <b id="wantIdx">–</b></span>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Freestyle</h2>
+  <div class="fields">
+    <div>
+      <label for="bpm">Tempo (targets / min)</label>
+      <input type="number" id="bpm" value="50" min="10" max="240" step="5">
+    </div>
+    <div>
+      <label for="dur">Duration (s)</label>
+      <input type="number" id="dur" value="60" min="5" max="900" step="5">
+    </div>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <button id="btnFree" disabled>Start freestyle</button>
+    <button id="btnStop" disabled>Stop</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Song mode</h2>
+  <div class="fields">
+    <div>
+      <label for="audio">Audio file (stays on your device)</label>
+      <input type="file" id="audio" accept="audio/*">
+    </div>
+    <div>
+      <label for="chor">Choreography .json (optional)</label>
+      <input type="file" id="chor" accept=".json,application/json">
+    </div>
+  </div>
+  <audio id="player" controls style="width:100%;margin-top:10px"></audio>
+  <div class="row" style="margin-top:10px">
+    <button id="btnSong" disabled>Play song + targets</button>
+    <button id="btnGen" disabled>Auto-generate from tempo</button>
+  </div>
+  <div class="note">Without a choreography file, targets are generated at the
+    Freestyle tempo above for the length of the audio.</div>
+</div>
+
+<div class="card">
+  <h2>Log</h2>
+  <div id="log"></div>
+  <div class="row" style="margin-top:8px">
+    <button id="btnClear">Clear</button>
+    <button id="btnTrace">Verbose: off</button>
+  </div>
+</div>
+
+<div class="card danger">
+  <h2>Safety</h2>
+  <div class="note">
+    This page never writes to the two firmware/DFU characteristics
+    (<code>9D47B456</code>, <code>BEF225B3</code>) — those are the only realistic
+    way to brick the machine, and they are hard-blocked in code.
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ---------------- protocol constants (see PROTOCOL.md) ---------------- */
+
+const SVC_LB          = "43abf632-6ad7-4cd0-a6b8-000bebb5faa6";
+const CTRL_PT         = "a5887ce9-160b-4238-add6-3757f64bfcfd";
+const PLAYBACK_STATUS = "29eda14a-f221-4a9b-bf83-43da05d4f3b5";
+const ANIMATION_SPEED = "09b4041f-0a90-4401-9aba-b4623adc34b7";
+const DATA_LOAD_SEND  = "8be06e5e-5cfd-4a4e-8d2b-e80f0b0689d6";
+const DATA_LOAD_RECV  = "adb53c85-7a04-4c68-b309-c694a3df3876";
+
+// Nordic DFU. Never written. Guarded in write().
+const FORBIDDEN = new Set([
+  "9d47b456-2047-46fd-87db-a7362413dee6",
+  "bef225b3-9ade-4f64-b9c3-923b301e5e27",
+]);
+
+const PAD_NAMES   = ["Top","TopLeft","TopRight","BottomLeft","BottomRight","Bottom"];
+const PHYSICAL    = [0,1,2,3,4,5];
+const KEEPALIVE_MS = 15000;
+const STREAM_MS    = 100;     // ResultsLoop cadence
+const DEFAULT_LANE = 1000;
+
+/* ---------------- encoders ---------------- */
+
+// 7-byte Note: index u16 LE | time u24 LE | pad+green | force+didPunch
+function noteBytes(index, timeMs, pad, sawGreen = false, force = 0, didPunch = false) {
+  if (index  < 0 || index  > 0xFFFF)   throw new Error("note index out of range");
+  if (timeMs < 0 || timeMs > 0xFFFFFF) throw new Error("time_ms exceeds 24-bit field");
+  if (pad    < 0 || pad    > 0x7F)     throw new Error("pad out of range");
+  return new Uint8Array([
+    index & 0xFF, (index >> 8) & 0xFF,
+    timeMs & 0xFF, (timeMs >> 8) & 0xFF, (timeMs >> 16) & 0xFF,
+    (pad & 0x7F) | (sawGreen ? 0x80 : 0),
+    (force & 0x7F) | (didPunch ? 0x80 : 0),
+  ]);
+}
+
+// 19-byte NotePacket. Field 0-1 outbound is our RESULT COUNT (the ack the
+// machine waits on), NOT the index it asked for. See PROTOCOL.md section 5.
+function notePacket(resultsCount, highestIndex, entries) {
+  if (entries.length > 2) throw new Error("at most 2 notes per packet");
+  const b = new Uint8Array(19);
+  b[0] = resultsCount  & 0xFF; b[1] = (resultsCount  >> 8) & 0xFF;
+  b[2] = highestIndex  & 0xFF; b[3] = (highestIndex  >> 8) & 0xFF;
+  b[4] = entries.length;
+  entries.forEach((e, i) => b.set(e, 5 + i * 7));
+  return b;
+}
+
+function parseNote(v, off) {
+  const padB = v.getUint8(off + 5), forceB = v.getUint8(off + 6);
+  return {
+    index:  v.getUint8(off) | (v.getUint8(off + 1) << 8),
+    timeMs: v.getUint8(off + 2) | (v.getUint8(off + 3) << 8) | (v.getUint8(off + 4) << 16),
+    pad:      padB & 0x7F,
+    padName:  PAD_NAMES[padB & 0x7F] ?? "?",
+    sawGreen: !!(padB & 0x80),
+    force:    forceB & 0x7F,
+    didPunch: !!(forceB & 0x80),
+  };
+}
+
+function parseNotePacket(v) {
+  if (v.byteLength < 5) return null;
+  const out = {
+    nextNeeded:   v.getUint8(0) | (v.getUint8(1) << 8),
+    highestIndex: v.getUint8(2) | (v.getUint8(3) << 8),
+    count:        v.getUint8(4) & 0x0F,
+    notes: [],
+  };
+  for (let i = 0; i < Math.min(out.count, 2); i++) {
+    const off = 5 + i * 7;
+    if (v.byteLength >= off + 7) out.notes.push(parseNote(v, off));
+  }
+  return out;
+}
+
+const hex = (u8) => Array.from(u8, (b) => b.toString(16).padStart(2, "0")).join("");
+
+/* ---------------- UI helpers ---------------- */
+
+const $ = (id) => document.getElementById(id);
+const logEl = $("log");
+let verbose = false;
+
+function log(msg, cls = "") {
+  const t = new Date().toTimeString().slice(0, 8);
+  const line = document.createElement("div");
+  if (cls) line.className = cls;
+  line.textContent = `${t}  ${msg}`;
+  logEl.appendChild(line);
+  while (logEl.childElementCount > 400) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// Pad buttons laid out like the machine: Top / TopL TopR / BottomL BottomR / Bottom
+const PAD_LAYOUT = [null, 0, null, 1, null, 2, 3, null, 4, null, 5, null];
+const padEls = {};
+function buildPads() {
+  const wrap = $("pads");
+  PAD_LAYOUT.forEach((pad) => {
+    const d = document.createElement("div");
+    d.className = "pad" + (pad === null ? " ghost" : "");
+    if (pad !== null) {
+      d.innerHTML = `${pad}<small>${PAD_NAMES[pad]}</small>`;
+      d.onclick = () => lb && lb.lightNow(pad);
+      padEls[pad] = d;
+    }
+    wrap.appendChild(d);
+  });
+}
+function flashPad(pad, cls) {
+  const el = padEls[pad];
+  if (!el) return;
+  el.classList.add(cls);
+  setTimeout(() => el.classList.remove(cls), cls === "hit" ? 450 : 350);
+}
+
+function setConnected(on, label) {
+  $("dot").classList.toggle("on", on);
+  $("status").textContent = label;
+  for (const id of ["btnPlay","btnIdle","btnFree","btnStop","btnSong","btnGen"])
+    $(id).disabled = !on;
+  $("btnDisconnect").disabled = !on;
+  $("btnConnect").disabled = on;
+}
+
+/* ---------------- the controller ---------------- */
+
+class Liteboxer {
+  constructor(device, chars) {
+    this.device = device;
+    this.chars = chars;
+    this.notes = [];            // Uint8Array(7) per note, by index
+    this.highestIndex = 0;
+    this.nextSendIndex = 0;
+    this.resultsCount = 0;      // the ACK counter
+    this.hits = [];
+    this.kaTimer = null;
+    this.streamTimer = null;
+    this.laneTime = DEFAULT_LANE;
+    this.liveIndex = 0;         // for ad-hoc "light now" notes
+    this.t0 = 0;
+  }
+
+  async write(uuid, data, withResponse = true) {
+    if (FORBIDDEN.has(uuid)) throw new Error("refusing to write to a DFU characteristic");
+    const c = this.chars[uuid];
+    if (!c) throw new Error(`characteristic ${uuid.slice(0,8)} not available`);
+    if (withResponse && c.writeValueWithResponse) await c.writeValueWithResponse(data);
+    else if (!withResponse && c.writeValueWithoutResponse) await c.writeValueWithoutResponse(data);
+    else await c.writeValue(data);
+    if (verbose) log(`-> ${uuid.slice(0,8)}  ${hex(data)}`, "tx");
+  }
+
+  onResults = (ev) => {
+    const pkt = parseNotePacket(ev.target.value);
+    if (!pkt) return;
+    if (verbose) log(`<- ${hex(new Uint8Array(ev.target.value.buffer))}`, "rx");
+
+    // Mirrors OnReceiveResults: every result entry counts toward the ACK,
+    // then nextSendIndex is taken unconditionally from the machine.
+    if (pkt.count) {
+      for (const n of pkt.notes) {
+        this.resultsCount++;
+        if (n.didPunch) {
+          this.hits.push(n);
+          flashPad(n.pad, "hit");
+          $("nHits").textContent = this.hits.length;
+          $("lastForce").textContent = n.force;
+          log(`HIT  ${n.padName}  force=${n.force}  t=${n.timeMs}ms`, "hit");
+        }
+      }
+    }
+    this.nextSendIndex = pkt.nextNeeded;
+    $("wantIdx").textContent = pkt.nextNeeded;
+  };
+
+  async subscribe() {
+    const c = this.chars[DATA_LOAD_RECV];
+    c.addEventListener("characteristicvaluechanged", this.onResults);
+    await c.startNotifications();
+    log("subscribed to results");
+  }
+
+  async setLaneTime(ms) {
+    ms = Math.max(0, Math.min(0xFFFF, ms | 0));
+    this.laneTime = ms;
+    await this.write(ANIMATION_SPEED, new Uint8Array([ms & 0xFF, (ms >> 8) & 0xFF]));
+  }
+
+  async enterPlaymode(allGreen) {
+    await this.write(CTRL_PT, new Uint8Array([0x04, allGreen ? 1 : 0, 0x02]));
+    await this.write(PLAYBACK_STATUS, new Uint8Array([0x01]));
+    this.t0 = performance.now();
+    log(`play mode (allGreen=${allGreen ? 1 : 0})`);
+    this.startKeepalive();
+  }
+
+  async goIdle() {
+    this.stopStream();
+    this.stopKeepalive();
+    try {
+      await this.write(PLAYBACK_STATUS, new Uint8Array([0x00]));
+      await this.write(CTRL_PT, new Uint8Array([0x08, 0x00]));
+      log("idle");
+    } catch (e) { log(`idle failed: ${e.message}`, "err"); }
+  }
+
+  async beginTrackLoad() {
+    await this.write(CTRL_PT, new Uint8Array([0x05, 0x00]));
+  }
+
+  startKeepalive() {
+    this.stopKeepalive();
+    this.kaTimer = setInterval(() => {
+      this.setLaneTime(this.laneTime).catch((e) => log(`keepalive: ${e.message}`, "err"));
+    }, KEEPALIVE_MS);
+  }
+  stopKeepalive() { if (this.kaTimer) { clearInterval(this.kaTimer); this.kaTimer = null; } }
+
+  loadTrack(list) {
+    const sorted = [...list].sort((a, b) => a.time_ms - b.time_ms);
+    this.notes = sorted.map((n, i) => noteBytes(i, Math.round(n.time_ms), n.pad, !!n.saw_green));
+    this.highestIndex = Math.max(0, this.notes.length - 1);
+    this.nextSendIndex = 0;
+    this.resultsCount = 0;
+    this.liveIndex = this.notes.length;
+    this.schedulePadPreview(sorted);
+    log(`track loaded: ${this.notes.length} notes, last at ${sorted.at(-1)?.time_ms ?? 0} ms`);
+  }
+
+  // purely cosmetic: light the on-screen pad when the machine should light it
+  schedulePadPreview(sorted) {
+    this.previewTimers?.forEach(clearTimeout);
+    this.previewTimers = sorted
+      .filter((n) => n.pad >= 0 && n.pad <= 5)
+      .map((n) => setTimeout(() => flashPad(n.pad, "lit"), n.time_ms));
+  }
+
+  startStream() {
+    this.stopStream();
+    let sent = 0;
+    this.streamTimer = setInterval(async () => {
+      const entries = [];
+      if (this.nextSendIndex < this.notes.length) {
+        entries.push(this.notes[this.nextSendIndex]);
+        if (this.nextSendIndex + 1 < this.notes.length)
+          entries.push(this.notes[this.nextSendIndex + 1]);
+      }
+      try {
+        await this.write(DATA_LOAD_SEND,
+          notePacket(this.resultsCount, this.highestIndex, entries), false);
+        if (entries.length) { sent += entries.length; $("nSent").textContent = sent; }
+      } catch (e) {
+        if (verbose) log(`stream: ${e.message}`, "err");
+      }
+      this.nextSendIndex += Math.max(1, entries.length);
+    }, STREAM_MS);
+  }
+  stopStream() {
+    if (this.streamTimer) { clearInterval(this.streamTimer); this.streamTimer = null; }
+    this.previewTimers?.forEach(clearTimeout);
+  }
+
+  /* light one pad as soon as possible, without disturbing a running track */
+  async lightNow(pad) {
+    const when = Math.round(performance.now() - this.t0) + 350;
+    const idx = this.liveIndex++;
+    this.notes[idx] = noteBytes(idx, Math.min(when, 0xFFFFFF), pad);
+    this.highestIndex = Math.max(this.highestIndex, idx);
+    flashPad(pad, "lit");
+    log(`light ${PAD_NAMES[pad]} at t+${when}ms`);
+    if (!this.streamTimer) {
+      await this.beginTrackLoad();
+      this.startStream();
+    }
+  }
+}
+
+let lb = null;
+
+/* ---------------- connect ---------------- */
+
+async function connect() {
+  if (!navigator.bluetooth) {
+    log("Web Bluetooth unavailable in this browser.", "err");
+    return;
+  }
+  try {
+    log("requesting device …");
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "Litebox" }],
+      optionalServices: [SVC_LB],
+    });
+    device.addEventListener("gattserverdisconnected", () => {
+      setConnected(false, "disconnected");
+      log("device disconnected", "err");
+      lb?.stopStream(); lb?.stopKeepalive();
+    });
+
+    log(`connecting to ${device.name} …`);
+    const server = await device.gatt.connect();
+    const svc = await server.getPrimaryService(SVC_LB);
+    const list = await svc.getCharacteristics();
+    const chars = {};
+    for (const c of list) chars[c.uuid] = c;
+    log(`found ${list.length} characteristics`);
+
+    lb = new Liteboxer(device, chars);
+    await lb.subscribe();
+    setConnected(true, device.name || "connected");
+  } catch (e) {
+    log(`connect failed: ${e.message}`, "err");
+  }
+}
+
+/* ---------------- track builders ---------------- */
+
+function freestyleTrack(bpm, seconds) {
+  const interval = 60000 / bpm;
+  const out = [];
+  // avoid repeating the same pad twice in a row
+  let prev = -1;
+  for (let i = 0; i * interval < seconds * 1000; i++) {
+    let pad;
+    do { pad = PHYSICAL[(Math.random() * PHYSICAL.length) | 0]; } while (pad === prev && PHYSICAL.length > 1);
+    prev = pad;
+    out.push({ time_ms: Math.round(1000 + i * interval), pad });
+  }
+  return out;
+}
+
+/* ---------------- wiring ---------------- */
+
+buildPads();
+
+$("support").textContent = navigator.bluetooth
+  ? "Web Bluetooth available."
+  : "This browser has no Web Bluetooth. Use Chrome or Edge.";
+
+$("btnConnect").onclick = connect;
+$("btnDisconnect").onclick = async () => {
+  await lb?.goIdle().catch(() => {});
+  lb?.device.gatt.disconnect();
+};
+
+$("btnPlay").onclick = async () => {
+  try {
+    await lb.setLaneTime(+$("laneTime").value || DEFAULT_LANE);
+    await lb.enterPlaymode($("allGreen").value === "1");
+  } catch (e) { log(`play failed: ${e.message}`, "err"); }
+};
+$("btnIdle").onclick = () => lb?.goIdle();
+
+$("btnFree").onclick = async () => {
+  try {
+    const bpm = +$("bpm").value || 50, dur = +$("dur").value || 60;
+    await lb.setLaneTime(+$("laneTime").value || DEFAULT_LANE);
+    await lb.enterPlaymode($("allGreen").value === "1");
+    lb.loadTrack(freestyleTrack(bpm, dur));
+    await lb.beginTrackLoad();
+    lb.startStream();
+    log(`freestyle: ${bpm}/min for ${dur}s`);
+    setTimeout(() => lb?.goIdle(), (dur + 4) * 1000);
+  } catch (e) { log(`freestyle failed: ${e.message}`, "err"); }
+};
+$("btnStop").onclick = () => lb?.goIdle();
+
+/* song mode */
+let choreography = null;
+$("audio").onchange = (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  $("player").src = URL.createObjectURL(f);
+  log(`audio loaded: ${f.name}`);
+};
+$("chor").onchange = async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  try {
+    const doc = JSON.parse(await f.text());
+    choreography = Array.isArray(doc) ? doc : doc.notes;
+    if (!Array.isArray(choreography)) throw new Error("expected an array or {notes:[…]}");
+    log(`choreography loaded: ${choreography.length} notes`);
+  } catch (err) {
+    choreography = null;
+    log(`bad choreography file: ${err.message}`, "err");
+  }
+};
+
+$("btnGen").onclick = () => {
+  const p = $("player");
+  const secs = Number.isFinite(p.duration) && p.duration > 0 ? p.duration : (+$("dur").value || 60);
+  choreography = freestyleTrack(+$("bpm").value || 50, secs);
+  log(`generated ${choreography.length} notes over ${secs.toFixed(0)}s`);
+};
+
+$("btnSong").onclick = async () => {
+  const p = $("player");
+  if (!p.src) { log("load an audio file first", "err"); return; }
+  if (!choreography) $("btnGen").onclick();
+  try {
+    await lb.setLaneTime(+$("laneTime").value || DEFAULT_LANE);
+    await lb.enterPlaymode($("allGreen").value === "1");
+    lb.loadTrack(choreography);
+    await lb.beginTrackLoad();
+    p.currentTime = 0;
+    await p.play();
+    lb.startStream();
+    log("song started");
+    p.onended = () => lb?.goIdle();
+  } catch (e) { log(`song failed: ${e.message}`, "err"); }
+};
+
+$("btnClear").onclick = () => { logEl.textContent = ""; };
+$("btnTrace").onclick = () => {
+  verbose = !verbose;
+  $("btnTrace").textContent = `Verbose: ${verbose ? "on" : "off"}`;
+};
+
+log("ready — press Connect, then Enter play mode.");
+</script>
+</body>
+</html>

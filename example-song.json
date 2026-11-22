@@ -1,0 +1,285 @@
+{
+ "name": "Demo combos (100 BPM)",
+ "notes": [
+  {
+   "time_ms": 1000,
+   "pad": 1
+  },
+  {
+   "time_ms": 1600,
+   "pad": 2
+  },
+  {
+   "time_ms": 2800,
+   "pad": 1
+  },
+  {
+   "time_ms": 3400,
+   "pad": 2
+  },
+  {
+   "time_ms": 4000,
+   "pad": 0
+  },
+  {
+   "time_ms": 5200,
+   "pad": 3
+  },
+  {
+   "time_ms": 5800,
+   "pad": 4
+  },
+  {
+   "time_ms": 7000,
+   "pad": 1
+  },
+  {
+   "time_ms": 7600,
+   "pad": 3
+  },
+  {
+   "time_ms": 8800,
+   "pad": 2
+  },
+  {
+   "time_ms": 9400,
+   "pad": 4
+  },
+  {
+   "time_ms": 10600,
+   "pad": 0
+  },
+  {
+   "time_ms": 11200,
+   "pad": 5
+  },
+  {
+   "time_ms": 12400,
+   "pad": 1
+  },
+  {
+   "time_ms": 13000,
+   "pad": 2
+  },
+  {
+   "time_ms": 14200,
+   "pad": 1
+  },
+  {
+   "time_ms": 14800,
+   "pad": 2
+  },
+  {
+   "time_ms": 15400,
+   "pad": 0
+  },
+  {
+   "time_ms": 16600,
+   "pad": 3
+  },
+  {
+   "time_ms": 17200,
+   "pad": 4
+  },
+  {
+   "time_ms": 18400,
+   "pad": 1
+  },
+  {
+   "time_ms": 19000,
+   "pad": 3
+  },
+  {
+   "time_ms": 20200,
+   "pad": 2
+  },
+  {
+   "time_ms": 20800,
+   "pad": 4
+  },
+  {
+   "time_ms": 22000,
+   "pad": 0
+  },
+  {
+   "time_ms": 22600,
+   "pad": 5
+  },
+  {
+   "time_ms": 23800,
+   "pad": 1
+  },
+  {
+   "time_ms": 24400,
+   "pad": 2
+  },
+  {
+   "time_ms": 25600,
+   "pad": 1
+  },
+  {
+   "time_ms": 26200,
+   "pad": 2
+  },
+  {
+   "time_ms": 26800,
+   "pad": 0
+  },
+  {
+   "time_ms": 28000,
+   "pad": 3
+  },
+  {
+   "time_ms": 28600,
+   "pad": 4
+  },
+  {
+   "time_ms": 29800,
+   "pad": 1
+  },
+  {
+   "time_ms": 30400,
+   "pad": 3
+  },
+  {
+   "time_ms": 31600,
+   "pad": 2
+  },
+  {
+   "time_ms": 32200,
+   "pad": 4
+  },
+  {
+   "time_ms": 33400,
+   "pad": 0
+  },
+  {
+   "time_ms": 34000,
+   "pad": 5
+  },
+  {
+   "time_ms": 35200,
+   "pad": 1
+  },
+  {
+   "time_ms": 35800,
+   "pad": 2
+  },
+  {
+   "time_ms": 37000,
+   "pad": 1
+  },
+  {
+   "time_ms": 37600,
+   "pad": 2
+  },
+  {
+   "time_ms": 38200,
+   "pad": 0
+  },
+  {
+   "time_ms": 39400,
+   "pad": 3
+  },
+  {
+   "time_ms": 40000,
+   "pad": 4
+  },
+  {
+   "time_ms": 41200,
+   "pad": 1
+  },
+  {
+   "time_ms": 41800,
+   "pad": 3
+  },
+  {
+   "time_ms": 43000,
+   "pad": 2
+  },
+  {
+   "time_ms": 43600,
+   "pad": 4
+  },
+  {
+   "time_ms": 44800,
+   "pad": 0
+  },
+  {
+   "time_ms": 45400,
+   "pad": 5
+  },
+  {
+   "time_ms": 46600,
+   "pad": 1
+  },
+  {
+   "time_ms": 47200,
+   "pad": 2
+  },
+  {
+   "time_ms": 48400,
+   "pad": 1
+  },
+  {
+   "time_ms": 49000,
+   "pad": 2
+  },
+  {
+   "time_ms": 49600,
+   "pad": 0
+  },
+  {
+   "time_ms": 50800,
+   "pad": 3
+  },
+  {
+   "time_ms": 51400,
+   "pad": 4
+  },
+  {
+   "time_ms": 52600,
+   "pad": 1
+  },
+  {
+   "time_ms": 53200,
+   "pad": 3
+  },
+  {
+   "time_ms": 54400,
+   "pad": 2
+  },
+  {
+   "time_ms": 55000,
+   "pad": 4
+  },
+  {
+   "time_ms": 56200,
+   "pad": 0
+  },
+  {
+   "time_ms": 56800,
+   "pad": 5
+  },
+  {
+   "time_ms": 58000,
+   "pad": 1
+  },
+  {
+   "time_ms": 58600,
+   "pad": 2
+  },
+  {
+   "time_ms": 59800,
+   "pad": 1
+  },
+  {
+   "time_ms": 60400,
+   "pad": 2
+  },
+  {
+   "time_ms": 61000,
+   "pad": 0
+  }
+ ]
+}

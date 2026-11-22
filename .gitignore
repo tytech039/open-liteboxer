@@ -1,0 +1,36 @@
+# Decompiled output from the official Liteboxer app.
+# Not redistributed here: it is Liteboxer's code, and it is ~200 MB.
+# Regenerate from your own copy of the .xapk with tools/unblob.py.
+xapk/
+base/
+assemblies/
+*.xapk
+*.apk
+*.dex
+assemblies.blob
+
+# Intermediate analysis artifacts
+headunit_il.txt
+strings_headunit.txt
+*_il.txt
+
+# Audio. Supply your own; only timing maps live in this repo.
+*.mp3
+*.m4a
+*.wav
+*.flac
+*.ogg
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Choreography generated from commercial recordings — tied to specific
+# copyrighted audio, so kept local. example-song.json is synthetic.
+xgon-give-it-to-ya.json
+songs/
