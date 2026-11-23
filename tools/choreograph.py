@@ -56,6 +56,37 @@ COMBOS_HIGH = [
 ]
 
 
+# Played at the end of an 8-bar phrase: busier, and resolves on a big shot.
+COMBOS_FILL = [
+    [(0, 1), (0.5, 2), (1, 3), (1.5, 4), (2, 0), (3, 5)],
+    [(0, 3), (0.5, 4), (1, 1), (1.5, 2), (2.5, 0)],
+    [(0, 1), (0.5, 1), (1, 2), (1.5, 2), (2, 3), (3, 0)],
+    [(0, 2), (1, 1), (1.5, 2), (2, 4), (3, 0)],
+]
+
+
+def onset_peaks(env: np.ndarray, fps: float) -> np.ndarray:
+    """Times (s) of local maxima in the onset envelope, for snapping."""
+    e = env
+    idx = np.where((e[1:-1] >= e[:-2]) & (e[1:-1] > e[2:]) &
+                   (e[1:-1] > e.mean()))[0] + 1
+    return idx / fps
+
+
+def snap(t: float, peaks: np.ndarray, tol: float) -> float:
+    """Pull t onto the nearest real onset if one is within tol seconds."""
+    if not len(peaks) or tol <= 0:
+        return t
+    i = int(np.searchsorted(peaks, t))
+    best, bd = t, tol
+    for j in (i - 1, i, i + 1):
+        if 0 <= j < len(peaks):
+            d = abs(peaks[j] - t)
+            if d < bd:
+                best, bd = float(peaks[j]), d
+    return best
+
+
 def decode(path: str) -> np.ndarray:
     """Decode any audio file to mono float32 at SR via ffmpeg."""
     cmd = ["ffmpeg", "-v", "error", "-i", path,
@@ -134,7 +165,8 @@ def bar_energy(y: np.ndarray, beat_times: np.ndarray, beats_per_bar=4) -> np.nda
     return e
 
 
-def build(beat_times, energies, lead_ms, min_gap_ms, beats_per_bar=4, seed=11):
+def build(beat_times, energies, lead_ms, min_gap_ms, beats_per_bar=4, seed=11,
+          peaks=None, snap_tol=0.0, phrase_bars=8):
     """Lay combos onto the beat grid, intensity following bar energy."""
     rng = np.random.default_rng(seed)
     notes = []
@@ -143,6 +175,7 @@ def build(beat_times, energies, lead_ms, min_gap_ms, beats_per_bar=4, seed=11):
     # thresholds from the energy distribution, so it adapts to the mix
     t_lo, t_hi = np.quantile(energies, [0.35, 0.72])
     silence = t_lo * 0.45
+    counters["fill"] = 0
 
     for bar_i, e in enumerate(energies):
         start = bar_i * beats_per_bar
@@ -150,7 +183,10 @@ def build(beat_times, energies, lead_ms, min_gap_ms, beats_per_bar=4, seed=11):
             break
         if e < silence:
             continue                                   # genuine silence: rest
-        if e < t_lo:
+        # last bar of an 8-bar phrase gets a fill, provided there is energy for it
+        if phrase_bars and bar_i % phrase_bars == phrase_bars - 1 and e >= t_lo:
+            tier, pool = "fill", COMBOS_FILL
+        elif e < t_lo:
             tier, pool = "low", COMBOS_LOW
         elif e < t_hi:
             tier, pool = "mid", COMBOS_MID
@@ -167,6 +203,7 @@ def build(beat_times, energies, lead_ms, min_gap_ms, beats_per_bar=4, seed=11):
         beat = beat_times[start + 1] - beat_times[start]
         for off, pad in combo:
             t = beat_times[start] + off * beat
+            t = snap(t, peaks, snap_tol)
             notes.append({"time_ms": int(round(t * 1000)) - lead_ms, "pad": int(pad)})
 
     # clean up: in-range, sorted, and never two targets closer than min_gap
@@ -197,6 +234,11 @@ def main():
                          "cycle. 'auto' engages above --half-time-above (default)")
     ap.add_argument("--half-time-above", type=float, default=140.0,
                     help="BPM above which 'auto' half-time engages (default 140)")
+    ap.add_argument("--snap", type=int, default=90,
+                    help="snap each target to a real onset within this many ms "
+                         "(0 disables; default 90)")
+    ap.add_argument("--phrase", type=int, default=8,
+                    help="bars per phrase; the last bar gets a fill (0 disables)")
     ap.add_argument("--seed", type=int, default=11)
     args = ap.parse_args()
 
@@ -231,7 +273,10 @@ def main():
     energies = bar_energy(y, beat_times)
     print(f"bars: {len(energies)}")
 
-    notes = build(beat_times, energies, args.lead, args.min_gap, seed=args.seed)
+    peaks = onset_peaks(env, fps)
+    notes = build(beat_times, energies, args.lead, args.min_gap, seed=args.seed,
+                  peaks=peaks, snap_tol=args.snap / 1000.0, phrase_bars=args.phrase)
+    print(f"onset peaks available for snapping: {len(peaks)}")
     if not notes:
         sys.exit("no notes generated")
 
