@@ -191,7 +191,12 @@ class Scorer:
         return min(2.0, 1.0 + (self.combo // 10) * 0.1)
 
     def register(self, pad: int, t_ms: int, force: int):
-        """Score one reported hit. Returns (rating, points, delta) or None."""
+        """Score one reported hit. Returns (rating, points, delta) or None.
+
+        Misses are only ever reported by omission, so before scoring a hit we
+        retire any earlier target that can no longer be hit. That is what
+        breaks the combo -- otherwise it would only ever count upward."""
+        self._retire_before(t_ms - MATCH_WINDOW)
         best, bd = None, MATCH_WINDOW + 1
         for tgt in self.targets:
             if tgt["pad"] != pad or tgt["hit"] is not None:
@@ -215,6 +220,22 @@ class Scorer:
         self.deltas.append(delta)
         self.forces.append(force)
         return rating, gained, delta
+
+    def _retire_before(self, cutoff_ms: int):
+        """Mark unhit targets older than cutoff as missed; break the combo."""
+        broke = False
+        for tgt in self.targets:                 # sorted by time
+            if tgt["time_ms"] > cutoff_ms:
+                break
+            if tgt["hit"] is None and not tgt.get("missed"):
+                tgt["missed"] = True
+                broke = True
+        if broke:
+            self.combo = 0
+
+    def finish(self):
+        """Retire everything still outstanding at the end of a run."""
+        self._retire_before(10 ** 9)
 
     def report(self) -> str:
         total = len(self.targets)
@@ -557,6 +578,7 @@ async def _session(c, args, body):
         await lb.stop_keepalive()
         await lb.go_idle()
         if lb.scorer and lb.scorer.targets:
+            lb.scorer.finish()
             print(lb.scorer.report())
         elif lb.hits:
             print(f"\n{len(lb.hits)} hits recorded")

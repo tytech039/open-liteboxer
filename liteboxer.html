@@ -291,7 +291,19 @@ class Scorer {
     return ["LATE",LATE_POINTS];
   }
   multiplier(){ return Math.min(2, 1 + Math.floor(this.combo/10)*0.1); }
+  // Misses are only reported by omission, so retire any earlier target that
+  // can no longer be hit before scoring. That is what breaks the combo.
+  retireBefore(cutoff){
+    let broke=false;
+    for(const tg of this.targets){
+      if(tg.time_ms>cutoff) break;
+      if(!tg.hit && !tg.missed){ tg.missed=true; broke=true; }
+    }
+    if(broke) this.combo=0;
+  }
+  finish(){ this.retireBefore(Infinity); }
   register(pad,t,force){
+    this.retireBefore(t-MATCH_WINDOW);
     let best=null, bd=MATCH_WINDOW+1;
     for(const tg of this.targets){
       if(tg.pad!==pad || tg.hit) continue;
@@ -480,8 +492,11 @@ class Liteboxer {
       await this.write(PLAYBACK_STATUS, new Uint8Array([0x00]));
       await this.write(CTRL_PT, new Uint8Array([0x08, 0x00]));
       log("idle");
-      if (this.scorer && this.scorer.targets.length)
+      if (this.scorer && this.scorer.targets.length) {
+        this.scorer.finish();
+        paintScore(this.scorer, null);
         log("\n" + this.scorer.summary(), "hit");
+      }
     } catch (e) { log(`idle failed: ${e.message}`, "err"); }
   }
 
