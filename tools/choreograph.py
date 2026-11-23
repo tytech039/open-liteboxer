@@ -201,19 +201,35 @@ def build(beat_times, energies, lead_ms, min_gap_ms, beats_per_bar=4, seed=11,
         counters[tier] += 1
 
         beat = beat_times[start + 1] - beat_times[start]
+        # Never let snapping move a target more than a quarter of the
+        # subdivision, or it stops reading as on the beat.
+        tol = min(snap_tol, 0.25 * beat * 0.5) if snap_tol else 0.0
         for off, pad in combo:
-            t = beat_times[start] + off * beat
-            t = snap(t, peaks, snap_tol)
-            notes.append({"time_ms": int(round(t * 1000)) - lead_ms, "pad": int(pad)})
+            grid = beat_times[start] + off * beat
+            notes.append({
+                "time_ms": int(round(snap(grid, peaks, tol) * 1000)) - lead_ms,
+                "grid_ms": int(round(grid * 1000)) - lead_ms,
+                "pad": int(pad),
+            })
 
-    # clean up: in-range, sorted, and never two targets closer than min_gap
+    # Enforce spacing. Snapping can pull neighbours together, so if a snapped
+    # time crowds its predecessor, fall back to that note's pure grid position
+    # before giving up on it -- keeps the note rather than dropping it.
     notes = [n for n in notes if n["time_ms"] >= 0]
-    notes.sort(key=lambda n: n["time_ms"])
-    cleaned = []
+    notes.sort(key=lambda n: n["grid_ms"])
+    cleaned, reverted, dropped = [], 0, 0
     for n in notes:
-        if cleaned and n["time_ms"] - cleaned[-1]["time_ms"] < min_gap_ms:
-            continue
-        cleaned.append(n)
+        t = n["time_ms"]
+        if cleaned and t - cleaned[-1]["time_ms"] < min_gap_ms:
+            t = n["grid_ms"]
+            if cleaned and t - cleaned[-1]["time_ms"] < min_gap_ms:
+                dropped += 1
+                continue
+            reverted += 1
+        cleaned.append({"time_ms": t, "pad": n["pad"]})
+    cleaned.sort(key=lambda n: n["time_ms"])
+    if reverted or dropped:
+        print(f"spacing: {reverted} un-snapped to keep {min_gap_ms}ms, {dropped} dropped")
     return cleaned
 
 
@@ -226,8 +242,9 @@ def main():
     ap.add_argument("--bpm", type=float, help="override the detected tempo")
     ap.add_argument("--lead", type=int, default=180,
                     help="light each target this many ms before the beat (default 180)")
-    ap.add_argument("--min-gap", type=int, default=150,
-                    help="minimum ms between consecutive targets (default 150)")
+    ap.add_argument("--min-gap", type=int, default=300,
+                    help="minimum ms between consecutive targets. A punch cycle "
+                         "is roughly 300 ms, which is the default")
     ap.add_argument("--half-time", choices=["auto", "on", "off"], default="auto",
                     help="punch on every other beat. Fast tracks need this: at "
                          "160 BPM a half-beat is 186 ms, far quicker than a punch "
