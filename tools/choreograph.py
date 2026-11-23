@@ -191,6 +191,12 @@ def main():
                     help="light each target this many ms before the beat (default 180)")
     ap.add_argument("--min-gap", type=int, default=150,
                     help="minimum ms between consecutive targets (default 150)")
+    ap.add_argument("--half-time", choices=["auto", "on", "off"], default="auto",
+                    help="punch on every other beat. Fast tracks need this: at "
+                         "160 BPM a half-beat is 186 ms, far quicker than a punch "
+                         "cycle. 'auto' engages above --half-time-above (default)")
+    ap.add_argument("--half-time-above", type=float, default=140.0,
+                    help="BPM above which 'auto' half-time engages (default 140)")
     ap.add_argument("--seed", type=int, default=11)
     args = ap.parse_args()
 
@@ -211,6 +217,17 @@ def main():
     beat_times = frames / fps
     print(f"beat grid: {len(beat_times)} beats, first at {beat_times[0]:.3f}s")
 
+    # Half-time: keep every other beat, so combo subdivisions land on intervals
+    # a person can actually punch. The grid stays locked to the music.
+    halve = args.half_time == "on" or (
+        args.half_time == "auto" and bpm > args.half_time_above)
+    if halve:
+        beat_times = beat_times[::2]
+        print(f"half-time: {bpm:.1f} -> {bpm/2:.1f} BPM "
+              f"(beat {60000/bpm:.0f}ms -> {120000/bpm:.0f}ms), "
+              f"{len(beat_times)} punch beats")
+        bpm = bpm / 2.0
+
     energies = bar_energy(y, beat_times)
     print(f"bars: {len(energies)}")
 
@@ -224,6 +241,7 @@ def main():
         "name": name,
         "source_audio": args.audio.rsplit("/", 1)[-1],
         "bpm": round(bpm, 1),
+        "half_time": bool(halve),
         "duration_ms": int(dur * 1000),
         "lead_ms": args.lead,
         "notes": notes,
