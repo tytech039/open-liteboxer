@@ -154,6 +154,97 @@ def parse_note_packet(buf: bytes) -> dict:
     return out
 
 
+
+# ---------------------------------------------------------------- scoring
+
+# Timing windows, measured from the note's scheduled time. The machine reports
+# the real punch moment (verified: deltas spread -155..+18 ms against a known
+# track), so these are meaningful rather than cosmetic.
+WINDOWS = [(60, "PERFECT", 100), (120, "GREAT", 70), (250, "GOOD", 40)]
+LATE_POINTS = 10
+MATCH_WINDOW = 500          # ms either side to associate a hit with a target
+
+
+class Scorer:
+    """Matches reported hits back to scheduled targets and keeps a score."""
+
+    def __init__(self, notes: list[dict]):
+        # notes: [{time_ms, pad}, ...] as loaded, in play order
+        self.targets = [{"time_ms": int(n["time_ms"]), "pad": int(n["pad"]),
+                         "hit": None} for n in sorted(notes, key=lambda n: n["time_ms"])]
+        self.score = 0
+        self.combo = 0
+        self.best_combo = 0
+        self.counts = {"PERFECT": 0, "GREAT": 0, "GOOD": 0, "LATE": 0}
+        self.deltas: list[int] = []
+        self.forces: list[int] = []
+        self.unmatched = 0
+
+    @staticmethod
+    def _rate(delta_ms: int):
+        for limit, name, pts in WINDOWS:
+            if abs(delta_ms) <= limit:
+                return name, pts
+        return "LATE", LATE_POINTS
+
+    def multiplier(self) -> float:
+        return min(2.0, 1.0 + (self.combo // 10) * 0.1)
+
+    def register(self, pad: int, t_ms: int, force: int):
+        """Score one reported hit. Returns (rating, points, delta) or None."""
+        best, bd = None, MATCH_WINDOW + 1
+        for tgt in self.targets:
+            if tgt["pad"] != pad or tgt["hit"] is not None:
+                continue
+            d = abs(tgt["time_ms"] - t_ms)
+            if d < bd:
+                best, bd = tgt, d
+        if best is None:
+            self.unmatched += 1
+            return None
+
+        delta = t_ms - best["time_ms"]
+        rating, pts = self._rate(delta)
+        best["hit"] = {"delta": delta, "force": force, "rating": rating}
+
+        self.combo += 1
+        self.best_combo = max(self.best_combo, self.combo)
+        gained = int(pts * self.multiplier())
+        self.score += gained
+        self.counts[rating] += 1
+        self.deltas.append(delta)
+        self.forces.append(force)
+        return rating, gained, delta
+
+    def report(self) -> str:
+        total = len(self.targets)
+        hits = sum(1 for t in self.targets if t["hit"])
+        misses = total - hits
+        acc = hits / total * 100 if total else 0.0
+        out = ["", "=" * 46, f"{'SCORE':<22}{self.score:>24,}", "=" * 46,
+               f"  targets          {total}",
+               f"  hit              {hits}  ({acc:.0f}%)",
+               f"  missed           {misses}"]
+        for k in ("PERFECT", "GREAT", "GOOD", "LATE"):
+            out.append(f"  {k.lower():<16} {self.counts[k]}")
+        out.append(f"  best combo       {self.best_combo}")
+        if self.forces:
+            out.append(f"  force            avg {sum(self.forces)/len(self.forces):.1f}  "
+                       f"max {max(self.forces)}")
+        if self.deltas:
+            med = sorted(self.deltas)[len(self.deltas) // 2]
+            spread = sorted(abs(d) for d in self.deltas)[len(self.deltas) // 2]
+            out.append(f"  timing           median {med:+d}ms, typical error {spread}ms")
+            if abs(med) >= 40:
+                direction = "early" if med < 0 else "late"
+                out.append(f"                   consistently {abs(med)}ms {direction} - "
+                           f"try --lead {'-' if med < 0 else '+'}{abs(med)} from current")
+        if self.unmatched:
+            out.append(f"  unmatched hits   {self.unmatched}  (no scheduled target nearby)")
+        out.append("=" * 46)
+        return "\n".join(out)
+
+
 # ---------------------------------------------------------------- client
 
 
@@ -174,6 +265,7 @@ class Liteboxer:
         self.results_count = 0
         self._ka_task: asyncio.Task | None = None
         self.lane_time = DEFAULT_LANE_TIME
+        self.scorer: Scorer | None = None
         self.last_device_ts = b"\x00\x00\x00\x00"
         self.last_device_ts_recv = 0
         self.play_start: float | None = None
@@ -209,8 +301,15 @@ class Liteboxer:
                 self.results_count += 1
                 if n["did_punch"]:
                     self.hits.append(n)
-                    print(f"    *** HIT  pad={n['pad_name']:<12} "
-                          f"force={n['force']:<4} t={n['time_ms']}ms", flush=True)
+                    line = (f"    HIT  {n['pad_name']:<12} force={n['force']:<4} "
+                            f"t={n['time_ms']}ms")
+                    if self.scorer:
+                        res = self.scorer.register(n["pad"], n["time_ms"], n["force"])
+                        if res:
+                            rating, pts, delta = res
+                            line += (f"   {rating:<8} {delta:+5}ms  +{pts}"
+                                     f"   x{self.scorer.combo}")
+                    print(line, flush=True)
 
         lm = pkt.get("lowest_missing")
         if isinstance(lm, int):
@@ -352,6 +451,7 @@ class Liteboxer:
         self.highest_index = max(0, len(self.notes) - 1)
         self.next_send_index = 0
         self.results_count = 0
+        self.scorer = Scorer(notes)
         self.log(f"track loaded: {len(self.notes)} notes, "
                  f"last at {notes[-1]['time_ms'] if notes else 0} ms")
 
@@ -456,7 +556,9 @@ async def _session(c, args, body):
     finally:
         await lb.stop_keepalive()
         await lb.go_idle()
-        if lb.hits:
+        if lb.scorer and lb.scorer.targets:
+            print(lb.scorer.report())
+        elif lb.hits:
             print(f"\n{len(lb.hits)} hits recorded")
 
 

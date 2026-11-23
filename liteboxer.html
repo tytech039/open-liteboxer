@@ -61,6 +61,14 @@
   .stats b{color:var(--ink);font-variant-numeric:tabular-nums}
   .note{font-size:12px;color:var(--dim);margin-top:8px}
   .danger{border-color:#4a2626;background:#1a1012}
+  .scorebar{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  .scorebar .big{font-size:38px;font-weight:800;letter-spacing:-.02em;
+    font-variant-numeric:tabular-nums;line-height:1}
+  .scorebar .combo{font-size:20px;font-weight:700;color:var(--accent2);
+    font-variant-numeric:tabular-nums}
+  .scorebar .rating{font-size:13px;font-weight:700;letter-spacing:.08em;margin-left:auto}
+  .r-PERFECT{color:var(--accent)} .r-GREAT{color:#7fd3ff}
+  .r-GOOD{color:var(--accent2)} .r-LATE{color:var(--dim)}
   a{color:var(--accent)}
 </style>
 </head>
@@ -111,6 +119,21 @@
     <span>last force <b id="lastForce">–</b></span>
     <span>notes sent <b id="nSent">0</b></span>
     <span>machine wants <b id="wantIdx">–</b></span>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Score</h2>
+  <div class="scorebar">
+    <div class="big" id="scVal">0</div>
+    <div class="combo" id="scCombo">&times;0</div>
+    <div class="rating" id="scRating">&nbsp;</div>
+  </div>
+  <div class="stats">
+    <span>hit <b id="scHit">0</b>/<b id="scTotal">0</b></span>
+    <span>accuracy <b id="scAcc">–</b></span>
+    <span>best combo <b id="scBest">0</b></span>
+    <span>timing <b id="scTime">–</b></span>
   </div>
 </div>
 
@@ -250,6 +273,75 @@ function parseNotePacket(v) {
   return out;
 }
 
+// Timing windows from the note's scheduled time. The machine reports the real
+// punch moment, so these are meaningful. See PROTOCOL.md.
+const WINDOWS = [[60,"PERFECT",100],[120,"GREAT",70],[250,"GOOD",40]];
+const LATE_POINTS = 10, MATCH_WINDOW = 500;
+
+class Scorer {
+  constructor(notes){
+    this.targets = [...notes].sort((a,b)=>a.time_ms-b.time_ms)
+      .map(n=>({time_ms:Math.round(n.time_ms), pad:n.pad|0, hit:null}));
+    this.score=0; this.combo=0; this.best=0; this.unmatched=0;
+    this.counts={PERFECT:0,GREAT:0,GOOD:0,LATE:0};
+    this.deltas=[]; this.forces=[];
+  }
+  static rate(d){
+    for(const [lim,name,pts] of WINDOWS) if(Math.abs(d)<=lim) return [name,pts];
+    return ["LATE",LATE_POINTS];
+  }
+  multiplier(){ return Math.min(2, 1 + Math.floor(this.combo/10)*0.1); }
+  register(pad,t,force){
+    let best=null, bd=MATCH_WINDOW+1;
+    for(const tg of this.targets){
+      if(tg.pad!==pad || tg.hit) continue;
+      const d=Math.abs(tg.time_ms-t);
+      if(d<bd){ best=tg; bd=d; }
+    }
+    if(!best){ this.unmatched++; return null; }
+    const delta=t-best.time_ms, [rating,pts]=Scorer.rate(delta);
+    best.hit={delta,force,rating};
+    this.combo++; this.best=Math.max(this.best,this.combo);
+    const gained=Math.round(pts*this.multiplier());
+    this.score+=gained; this.counts[rating]++;
+    this.deltas.push(delta); this.forces.push(force);
+    return {rating,gained,delta};
+  }
+  get hits(){ return this.targets.filter(t=>t.hit).length; }
+  summary(){
+    const tot=this.targets.length, h=this.hits;
+    const med = this.deltas.length
+      ? [...this.deltas].sort((a,b)=>a-b)[this.deltas.length>>1] : null;
+    const lines=[`SCORE ${this.score.toLocaleString()}`,
+      `hit ${h}/${tot} (${tot?Math.round(h/tot*100):0}%)  missed ${tot-h}`,
+      `perfect ${this.counts.PERFECT}  great ${this.counts.GREAT}  `+
+      `good ${this.counts.GOOD}  late ${this.counts.LATE}`,
+      `best combo ${this.best}`];
+    if(med!==null){
+      lines.push(`timing median ${med>0?"+":""}${med}ms`);
+      if(Math.abs(med)>=40)
+        lines.push(`consistently ${Math.abs(med)}ms ${med<0?"early":"late"}`);
+    }
+    return lines.join("\n");
+  }
+}
+
+function paintScore(sc, rating){
+  $("scVal").textContent   = sc ? sc.score.toLocaleString() : "0";
+  $("scCombo").textContent = "\u00d7" + (sc ? sc.combo : 0);
+  $("scHit").textContent   = sc ? sc.hits : 0;
+  $("scTotal").textContent = sc ? sc.targets.length : 0;
+  $("scBest").textContent  = sc ? sc.best : 0;
+  $("scAcc").textContent   = sc && sc.targets.length
+    ? Math.round(sc.hits/sc.targets.length*100)+"%" : "\u2013";
+  if(sc && sc.deltas.length){
+    const m=[...sc.deltas].sort((a,b)=>a-b)[sc.deltas.length>>1];
+    $("scTime").textContent = (m>0?"+":"")+m+"ms";
+  } else $("scTime").textContent="\u2013";
+  const el=$("scRating");
+  if(rating){ el.textContent=rating; el.className="rating r-"+rating; }
+}
+
 const hex = (u8) => Array.from(u8, (b) => b.toString(16).padStart(2, "0")).join("");
 
 /* ---------------- UI helpers ---------------- */
@@ -315,6 +407,7 @@ class Liteboxer {
     this.streamTimer = null;
     this.laneTime = DEFAULT_LANE;
     this.liveIndex = 0;         // for ad-hoc "light now" notes
+    this.scorer = null;
     this.t0 = 0;
   }
 
@@ -343,7 +436,15 @@ class Liteboxer {
           flashPad(n.pad, "hit");
           $("nHits").textContent = this.hits.length;
           $("lastForce").textContent = n.force;
-          log(`HIT  ${n.padName}  force=${n.force}  t=${n.timeMs}ms`, "hit");
+          let extra = "";
+          if (this.scorer) {
+            const r = this.scorer.register(n.pad, n.timeMs, n.force);
+            if (r) {
+              extra = `  ${r.rating} ${r.delta>0?"+":""}${r.delta}ms +${r.gained}`;
+              paintScore(this.scorer, r.rating);
+            }
+          }
+          log(`HIT  ${n.padName}  force=${n.force}  t=${n.timeMs}ms${extra}`, "hit");
         }
       }
     }
@@ -379,6 +480,8 @@ class Liteboxer {
       await this.write(PLAYBACK_STATUS, new Uint8Array([0x00]));
       await this.write(CTRL_PT, new Uint8Array([0x08, 0x00]));
       log("idle");
+      if (this.scorer && this.scorer.targets.length)
+        log("\n" + this.scorer.summary(), "hit");
     } catch (e) { log(`idle failed: ${e.message}`, "err"); }
   }
 
@@ -401,6 +504,8 @@ class Liteboxer {
     this.nextSendIndex = 0;
     this.resultsCount = 0;
     this.liveIndex = this.notes.length;
+    this.scorer = new Scorer(sorted);
+    paintScore(this.scorer, null);
     this.schedulePadPreview(sorted);
     log(`track loaded: ${this.notes.length} notes, last at ${sorted.at(-1)?.time_ms ?? 0} ms`);
   }
